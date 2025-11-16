@@ -1,172 +1,280 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8" />
-<title>CalistoTrack Live Viewer PRO</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>CalistoTrack — Auto-detect GeoJSON Viewer</title>
+
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+
 <style>
-  body, html { margin:0; padding:0; height:100%; }
-  #map { width:100%; height:100%; }
-  .panel {
-    position:absolute; top:10px; right:10px;
-    background:white; padding:10px; width:240px;
-    max-height:80%; overflow:auto;
-    box-shadow:0 0 10px rgba(0,0,0,0.3);
-    border-radius:10px;
-    font-family:Arial;
-  }
-  .device-item { padding:5px; border-bottom:1px solid #ddd; cursor:pointer; }
-  .device-item:hover { background:#f0f0f0; }
-  .stats { margin-top:10px; font-size:14px; }
-  .label {
-    background:white; padding:2px 4px;
-    border-radius:3px; border:1px solid black;
-    font-size:12px;
-  }
+  html,body{height:100%;margin:0}
+  #map{width:100%;height:100%}
+  .panel{position:absolute;right:10px;top:10px;width:300px;background:#fff;padding:10px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.12);max-height:80%;overflow:auto;font-family:Arial,Helvetica,sans-serif;z-index:6000}
+  .small{font-size:12px;color:#666}
+  .fieldmap{background:#f7f7f7;padding:6px;border-radius:6px;margin:6px 0}
+  #debug{position:absolute;left:10px;bottom:10px;z-index:7000;background:rgba(0,0,0,0.8);color:#fff;padding:8px;border-radius:6px;font-family:monospace;max-width:70%;max-height:30%;overflow:auto}
+  .error{color:#c00;font-weight:700}
 </style>
 </head>
 <body>
 <div id="map"></div>
-<div class="panel">
-  <h3>Dispositivos</h3>
-  <div id="deviceList">Cargando...</div>
-  <div class="stats" id="statsBox"></div>
+
+<div class="panel" id="panel">
+  <h3 style="margin:0 0 6px 0">CalistoTrack Viewer</h3>
+  <div id="status" class="small">Status: inicializando...</div>
+
+  <div style="margin-top:8px">
+    <b>GeoJSON URL</b>
+    <div class="small" id="urlShow"></div>
+  </div>
+
+  <div style="margin-top:8px">
+    <b>Field mapping (detectado)</b>
+    <div id="fieldMap" class="fieldmap small">Aún sin datos</div>
+  </div>
+
+  <div style="margin-top:8px">
+    <b>Controles</b>
+    <div style="margin-top:6px">
+      <button id="btnReload">Recargar ahora</button>
+      <label style="margin-left:8px"><input id="chkFollow" type="checkbox" checked/> Auto-follow</label>
+    </div>
+  </div>
+
+  <div style="margin-top:8px">
+    <b>Dispositivos</b>
+    <div id="deviceList" class="small">Cargando...</div>
+  </div>
+
+  <div style="margin-top:8px" class="small" id="statsBox"></div>
+  <div style="margin-top:8px" class="small">Consejo: si probás localmente usa <code>python -m http.server</code></div>
 </div>
+
+<div id="debug" style="display:none"></div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script>
-////////////////////////// CONFIG //////////////////////////
-const geojsonUrl = "data.geojson"; // cambiar por tu URL Pages
-let autoFollow = true; // Auto-centro inteligente
+/* ============= CONFIG ============== */
+/* Pon aquí la URL absoluta si usás Pages/raw, o deja 'data.geojson' si usás Pages en la misma carpeta */
+const GEOJSON_URL = "positions.geojson";
+const REFRESH_MS = 10000;
 
-////////////////////// MAPA Y CAPAS /////////////////////////
-const baseLayers = {
-  "OSM": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19 }),
-  "Dark": L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { maxZoom:19 }),
-  "Light": L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", { maxZoom:19 })
-};
+const map = L.map('map', {center:[-34.60,-58.38],zoom:12});
+const base = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+L.control.layers({'OSM':base}).addTo(map);
 
-const map = L.map("map", {
-  center: [-34.60, -58.38], zoom: 12,
-  layers: [baseLayers["OSM"]],
-});
-L.control.layers(baseLayers).addTo(map);
+const cluster = L.markerClusterGroup(); map.addLayer(cluster);
+const trackLines = {}; const labels = {}; let lastPos = {}; let autoFollow = true;
 
-let clusterLayer = L.markerClusterGroup();
-map.addLayer(clusterLayer);
-
-let trackLines = {}; // tracking por dispositivo
-let labels = {}; // etiquetas dinámicas
-let lastPositions = {}; // para auto-follow inteligente
-
-//////////////////// ICONO ROTADO ///////////////////////////
-function getIcon(angle, color) {
-  return L.divIcon({
-    html: `<div style='transform: rotate(${angle}deg); font-size:26px; color:${color};'>➤</div>`,
-    className: "",
-    iconSize: [26,26],
-    iconAnchor: [13,13]
-  });
+/* debug helpers */
+const debugBox = document.getElementById('debug');
+function debug(msg, level='info'){
+  debugBox.style.display = 'block';
+  const prefix = (new Date()).toISOString() + ' ';
+  debugBox.innerText = prefix + msg + '\n' + debugBox.innerText;
+  if(level === 'error') console.error(msg); else console.log(msg);
+}
+function showUserError(msg){
+  document.getElementById('status').innerHTML = '<span class="error">'+msg+'</span>';
+  debug(msg,'error');
 }
 
-//////////////////// COLOR SEGÚN VELOCIDAD ///////////////////
-function speedColor(kmh) {
-  if (kmh < 5) return "#00cc00";
-  if (kmh < 30) return "#cccc00";
-  if (kmh < 60) return "#ff8800";
-  if (kmh < 120) return "#ff3300";
-  return "#cc00ff";
+/* UI wiring */
+document.getElementById('urlShow').innerText = GEOJSON_URL;
+document.getElementById('btnReload').onclick = ()=> loadAndRender();
+document.getElementById('chkFollow').onchange = (e)=> { autoFollow = e.target.checked };
+
+/* ========== automatic field detection ========== */
+/* Heuristics: common names for id/name/lat/lon/speed/course/time */
+const candidateNameKeys = ['name','deviceName','device_id','deviceId','uniqueId','id','title'];
+const candidateIdKeys = ['deviceId','id','uniqueId','device_id'];
+const candidateLatKeys = ['latitude','lat','y'];
+const candidateLonKeys = ['longitude','lon','lng','x'];
+const candidateSpeedKeys = ['speed','velocidad','velocity'];
+const candidateCourseKeys = ['course','heading','bearing','direccion','dir'];
+const candidateTimeKeys = ['deviceTime','serverTime','fixTime','time','timestamp'];
+
+function findKey(obj, candidates){
+  if(!obj || typeof obj !== 'object') return null;
+  for(const k of candidates) if(Object.prototype.hasOwnProperty.call(obj,k)) return k;
+  // also try case-insensitive
+  const lower = Object.keys(obj).reduce((acc,k)=>{acc[k.toLowerCase()]=k; return acc},{});
+  for(const c of candidates){
+    if(lower[c.toLowerCase()]) return lower[c.toLowerCase()];
+  }
+  return null;
 }
 
-//////////////////// FUNCIONES ÚTILES ////////////////////////
-function timeAgo(ts) {
-  const diff = (Date.now() - new Date(ts).getTime())/1000;
-  if (diff < 60) return `${Math.round(diff)} seg`;
-  if (diff < 3600) return `${Math.round(diff/60)} min`;
-  return `${Math.round(diff/3600)} hs`;
+/* ========== loader + renderer ========== */
+async function fetchText(url){
+  const res = await fetch(url + '?t=' + Date.now(), {cache:'no-store'});
+  if(!res.ok) throw new Error('HTTP ' + res.status + ' ' + res.statusText);
+  return res.text();
 }
 
-//////////////////// CARGAR GEOJSON //////////////////////////
-async function loadGeo() {
-  try {
-    const res = await fetch(geojsonUrl + "?t=" + Date.now());
-    const data = await res.json();
+function extractPoint(feature){
+  // returns {lat,lon,props}
+  if(!feature) return null;
+  const geom = feature.geometry;
+  const props = feature.properties || {};
+  let lat=null, lon=null;
+  if(geom && Array.isArray(geom.coordinates)){
+    lon = geom.coordinates[0]; lat = geom.coordinates[1];
+  }
+  if((lat==null || lon==null) && (props.latitude!=null && props.longitude!=null)){
+    lat = props.latitude; lon = props.longitude;
+  }
+  // try alternative names in props
+  if((lat==null || lon==null)){
+    const latKey = findKey(props, candidateLatKeys);
+    const lonKey = findKey(props, candidateLonKeys);
+    if(latKey && lonKey){ lat = props[latKey]; lon = props[lonKey]; }
+  }
+  return {lat,lon,props};
+}
 
-    document.getElementById("deviceList").innerHTML = "";
-    clusterLayer.clearLayers();
+function detectMapping(sampleFeature){
+  // returns an object mapping detected keys to standardized names
+  const props = (sampleFeature && sampleFeature.properties) || {};
+  const mapping = {};
+  mapping.nameKey = findKey(props, candidateNameKeys);
+  mapping.idKey = findKey(props, candidateIdKeys) || mapping.nameKey;
+  mapping.latKey = null; mapping.lonKey = null;
+  // if geometry exists, we prefer that
+  if(sampleFeature.geometry && Array.isArray(sampleFeature.geometry.coordinates)){
+    mapping.geometry = true;
+  } else {
+    mapping.geometry = false;
+    mapping.latKey = findKey(props, candidateLatKeys);
+    mapping.lonKey = findKey(props, candidateLonKeys);
+  }
+  mapping.speedKey = findKey(props, candidateSpeedKeys);
+  mapping.courseKey = findKey(props, candidateCourseKeys);
+  mapping.timeKey = findKey(props, candidateTimeKeys);
+  return mapping;
+}
 
-    let devicesOnline = 0;
-    let maxSpeed = 0;
+function speedColor(kmh){
+  if(kmh==null) return '#888';
+  if(kmh<5) return '#2ecc71';
+  if(kmh<30) return '#f1c40f';
+  if(kmh<60) return '#e67e22';
+  if(kmh<120) return '#e74c3c';
+  return '#8e44ad';
+}
 
-    data.features.forEach(f => {
-      const p = f.properties;
-      const latlng = L.latLng(p.latitude, p.longitude);
+function createIcon(angle, color){
+  return L.divIcon({html:`<div style="transform:rotate(${angle}deg);font-size:20px;color:${color}">➤</div>`, className:'', iconSize:[24,24], iconAnchor:[12,12]});
+}
 
-      const color = speedColor(p.speed || 0);
-      const marker = L.marker(latlng, {
-        icon: getIcon(p.course || 0, color)
-      });
+async function loadAndRender(){
+  try{
+    document.getElementById('status').innerText = 'Cargando geojson...';
+    if(location.protocol === 'file:'){
+      showUserError('Estás abriendo index.html con file:// — usa GitHub Pages o el servidor local python -m http.server');
+      return;
+    }
+    const text = await fetchText(GEOJSON_URL);
+    if(!text || text.trim().length===0) { showUserError('GeoJSON vacío (respuesta vacía)'); return; }
+    let data;
+    try{ data = JSON.parse(text); } catch(e){ showUserError('JSON inválido: ' + e.message); debug('Raw response preview: ' + text.slice(0,1000)); return; }
+    if(!data || !Array.isArray(data.features)){ showUserError('GeoJSON cargado pero no tiene array features'); debug('Parsed object: ' + JSON.stringify(Object.keys(data)).slice(0,500)); return; }
+    if(data.features.length === 0){ showUserError('GeoJSON válido pero sin features (features.length == 0)'); return; }
 
-      marker.bindPopup(`
-        <b>${p.name}</b><br>
-        Vel: ${p.speed} km/h<br>
-        Rumbo: ${p.course}°<br>
-        Ultimo fix: ${timeAgo(p.fixTime)}<br>
-        (${p.latitude}, ${p.longitude})
-      `);
+    // detect mapping from first non-empty feature
+    let sample = null;
+    for(const f of data.features) { if(f && (f.geometry || f.properties)) { sample = f; break; } }
+    if(!sample){ showUserError('No se encontró feature válido'); return; }
+    const mapping = detectMapping(sample);
+    document.getElementById('fieldMap').innerText = JSON.stringify(mapping, null, 2);
+    debug('Field mapping: ' + JSON.stringify(mapping));
 
-      clusterLayer.addLayer(marker);
+    // clear layers and list
+    cluster.clearLayers(); document.getElementById('deviceList').innerHTML = '';
+    let online=0, maxSpeed=0;
 
-      // Etiqueta dinámica
-      if (labels[p.deviceId]) labels[p.deviceId].remove();
-      labels[p.deviceId] = L.marker(latlng, {
-        icon: L.divIcon({
-          html: `<div class='label'>${p.name} (${p.speed} km/h)</div>`,
-          className: "",
-          iconSize: [120,20]
-        }), interactive:false
-      }).addTo(map);
+    for(const f of data.features){
+      const pt = extractPoint(f);
+      if(!pt) continue;
+      const lat = Number(pt.lat); const lon = Number(pt.lon);
+      if(!isFinite(lat) || !isFinite(lon)) continue;
+      const p = pt.props || {};
+      // get common fields via mapping heuristics
+      const name = (mapping.nameKey && p[mapping.nameKey]) || p.name || ('device ' + (p.deviceId||p.id||'unk'));
+      const id = (mapping.idKey && p[mapping.idKey]) || p.deviceId || p.id || name;
+      const speed = mapping.speedKey ? Number(p[mapping.speedKey]) : (p.speed?Number(p.speed):0);
+      const course = mapping.courseKey ? Number(p[mapping.courseKey]) : (p.course?Number(p.course):0);
+      const time = mapping.timeKey ? p[mapping.timeKey] : (p.deviceTime||p.serverTime||p.fixTime||p.time);
 
-      // Tracking
-      if (!trackLines[p.deviceId]) {
-        trackLines[p.deviceId] = L.polyline([], { color: color, weight:3 }).addTo(map);
-      }
-      trackLines[p.deviceId].addLatLng(latlng);
+      const color = speedColor(isNaN(speed)?0:speed);
+      const marker = L.marker([lat,lon], {icon:createIcon(course||0,color)});
+      marker.bindPopup(`<b>${name}</b><br>ID: ${id}<br>Vel: ${speed} km/h<br>Dir: ${course}°<br>Último: ${time||'n/d'}`);
+      cluster.addLayer(marker);
 
-      // Panel lateral
-      const div = document.createElement("div");
-      div.className = "device-item";
-      div.innerHTML = `<b>${p.name}</b><br><small>${timeAgo(p.fixTime)}</small>`;
-      div.onclick = () => map.setView(latlng, 18);
-      document.getElementById("deviceList").appendChild(div);
+      // label
+      if(labels[id]) { labels[id].setLatLng([lat,lon]); }
+      else { labels[id] = L.marker([lat,lon], {icon: L.divIcon({html:`<div class="label">${name} (${speed} km/h)</div>`, className:'', iconSize:[140,20]}), interactive:false}).addTo(map); }
 
-      // Auto-follow inteligente
-      const prev = lastPositions[p.deviceId];
-      lastPositions[p.deviceId] = latlng;
-      if (autoFollow && !prev) map.setView(latlng, 16);
-      if (autoFollow && prev && prev.distanceTo(latlng) > 20) map.setView(latlng, 16);
+      // track line
+      if(!trackLines[id]) trackLines[id] = L.polyline([], {color:color, weight:2}).addTo(map);
+      trackLines[id].addLatLng([lat,lon]);
 
-      // Estadísticas
-      devicesOnline++;
-      if (p.speed > maxSpeed) maxSpeed = p.speed;
-    });
+      // side panel
+      const el = document.createElement('div'); el.className='device-item'; el.innerHTML = `<b>${name}</b><br><small>${time?timeAgo(time):'sin tiempo'}</small>`; el.onclick = ()=> map.setView([lat,lon],17);
+      document.getElementById('deviceList').appendChild(el);
 
-    document.getElementById("statsBox").innerHTML = `
-      <b>Online:</b> ${devicesOnline}<br>
-      <b>Vel máx:</b> ${maxSpeed} km/h<br>
-      <b>Actualizado:</b> ${new Date().toLocaleTimeString()}
-    `;
+      // auto follow
+      const prev = lastPos[id]; lastPos[id] = L.latLng(lat,lon);
+      if(autoFollow && !prev) map.setView([lat,lon],16);
+      if(autoFollow && prev && prev.distanceTo([lat,lon]) > 20) map.setView([lat,lon],16);
 
-  } catch (e) {
-    console.error("Error cargando GeoJSON", e);
+      online++; if(speed>maxSpeed) maxSpeed = speed;
+    }
+
+    document.getElementById('statsBox').innerHTML = `<b>Online:</b> ${online} &nbsp; <b>Vel máx:</b> ${maxSpeed} km/h &nbsp; <small>${new Date().toLocaleTimeString()}</small>`;
+    document.getElementById('status').innerText = 'GeoJSON cargado OK';
+    debug('Renderizado OK — features: ' + data.features.length);
+
+  }catch(err){
+    showUserError('Error cargando GeoJSON: ' + (err.message || err));
+    debug(String(err));
   }
 }
 
-loadGeo();
-setInterval(loadGeo, 8000);
+/* small helper for nice time text */
+function timeAgo(ts){
+  if(!ts) return 'sin dato';
+  const t = Date.parse(ts) || Number(ts);
+  if(isNaN(t)) return String(ts);
+  const s = Math.round((Date.now()-t)/1000);
+  if(s<60) return s+'s';
+  if(s<3600) return Math.round(s/60)+'m';
+  return Math.round(s/3600)+'h';
+}
+
+/* fetch text helper for debug */
+async function fetchAndShowSample(){
+  try{
+    const text = await fetchText(GEOJSON_URL);
+    debug('Sample response head: ' + text.slice(0,500));
+  }catch(e){ debug('fetch sample error: ' + e, 'error'); }
+}
+
+/* wrapper to reuse fetchText from previous file */
+async function fetchText(url){
+  const res = await fetch(url + '?t=' + Date.now(), {cache:'no-store'});
+  if(!res.ok) throw new Error('HTTP ' + res.status + ' ' + res.statusText);
+  return res.text();
+}
+
+/* initial run + periodic */
+loadAndRender();
+setInterval(loadAndRender, REFRESH_MS);
+
 </script>
 </body>
 </html>
