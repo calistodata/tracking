@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>CalistoTrack Live Viewer PRO</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+<style>
+  body, html { margin:0; padding:0; height:100%; }
+  #map { width:100%; height:100%; }
+  .panel {
+    position:absolute; top:10px; right:10px;
+    background:white; padding:10px; width:240px;
+    max-height:80%; overflow:auto;
+    box-shadow:0 0 10px rgba(0,0,0,0.3);
+    border-radius:10px;
+    font-family:Arial;
+  }
+  .device-item { padding:5px; border-bottom:1px solid #ddd; cursor:pointer; }
+  .device-item:hover { background:#f0f0f0; }
+  .stats { margin-top:10px; font-size:14px; }
+  .label {
+    background:white; padding:2px 4px;
+    border-radius:3px; border:1px solid black;
+    font-size:12px;
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="panel">
+  <h3>Dispositivos</h3>
+  <div id="deviceList">Cargando...</div>
+  <div class="stats" id="statsBox"></div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+////////////////////////// CONFIG //////////////////////////
+const geojsonUrl = "data.geojson"; // cambiar por tu URL Pages
+let autoFollow = true; // Auto-centro inteligente
+
+////////////////////// MAPA Y CAPAS /////////////////////////
+const baseLayers = {
+  "OSM": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19 }),
+  "Dark": L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { maxZoom:19 }),
+  "Light": L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", { maxZoom:19 })
+};
+
+const map = L.map("map", {
+  center: [-34.60, -58.38], zoom: 12,
+  layers: [baseLayers["OSM"]],
+});
+L.control.layers(baseLayers).addTo(map);
+
+let clusterLayer = L.markerClusterGroup();
+map.addLayer(clusterLayer);
+
+let trackLines = {}; // tracking por dispositivo
+let labels = {}; // etiquetas dinámicas
+let lastPositions = {}; // para auto-follow inteligente
+
+//////////////////// ICONO ROTADO ///////////////////////////
+function getIcon(angle, color) {
+  return L.divIcon({
+    html: `<div style='transform: rotate(${angle}deg); font-size:26px; color:${color};'>➤</div>`,
+    className: "",
+    iconSize: [26,26],
+    iconAnchor: [13,13]
+  });
+}
+
+//////////////////// COLOR SEGÚN VELOCIDAD ///////////////////
+function speedColor(kmh) {
+  if (kmh < 5) return "#00cc00";
+  if (kmh < 30) return "#cccc00";
+  if (kmh < 60) return "#ff8800";
+  if (kmh < 120) return "#ff3300";
+  return "#cc00ff";
+}
+
+//////////////////// FUNCIONES ÚTILES ////////////////////////
+function timeAgo(ts) {
+  const diff = (Date.now() - new Date(ts).getTime())/1000;
+  if (diff < 60) return `${Math.round(diff)} seg`;
+  if (diff < 3600) return `${Math.round(diff/60)} min`;
+  return `${Math.round(diff/3600)} hs`;
+}
+
+//////////////////// CARGAR GEOJSON //////////////////////////
+async function loadGeo() {
+  try {
+    const res = await fetch(geojsonUrl + "?t=" + Date.now());
+    const data = await res.json();
+
+    document.getElementById("deviceList").innerHTML = "";
+    clusterLayer.clearLayers();
+
+    let devicesOnline = 0;
+    let maxSpeed = 0;
+
+    data.features.forEach(f => {
+      const p = f.properties;
+      const latlng = L.latLng(p.latitude, p.longitude);
+
+      const color = speedColor(p.speed || 0);
+      const marker = L.marker(latlng, {
+        icon: getIcon(p.course || 0, color)
+      });
+
+      marker.bindPopup(`
+        <b>${p.name}</b><br>
+        Vel: ${p.speed} km/h<br>
+        Rumbo: ${p.course}°<br>
+        Ultimo fix: ${timeAgo(p.fixTime)}<br>
+        (${p.latitude}, ${p.longitude})
+      `);
+
+      clusterLayer.addLayer(marker);
+
+      // Etiqueta dinámica
+      if (labels[p.deviceId]) labels[p.deviceId].remove();
+      labels[p.deviceId] = L.marker(latlng, {
+        icon: L.divIcon({
+          html: `<div class='label'>${p.name} (${p.speed} km/h)</div>`,
+          className: "",
+          iconSize: [120,20]
+        }), interactive:false
+      }).addTo(map);
+
+      // Tracking
+      if (!trackLines[p.deviceId]) {
+        trackLines[p.deviceId] = L.polyline([], { color: color, weight:3 }).addTo(map);
+      }
+      trackLines[p.deviceId].addLatLng(latlng);
+
+      // Panel lateral
+      const div = document.createElement("div");
+      div.className = "device-item";
+      div.innerHTML = `<b>${p.name}</b><br><small>${timeAgo(p.fixTime)}</small>`;
+      div.onclick = () => map.setView(latlng, 18);
+      document.getElementById("deviceList").appendChild(div);
+
+      // Auto-follow inteligente
+      const prev = lastPositions[p.deviceId];
+      lastPositions[p.deviceId] = latlng;
+      if (autoFollow && !prev) map.setView(latlng, 16);
+      if (autoFollow && prev && prev.distanceTo(latlng) > 20) map.setView(latlng, 16);
+
+      // Estadísticas
+      devicesOnline++;
+      if (p.speed > maxSpeed) maxSpeed = p.speed;
+    });
+
+    document.getElementById("statsBox").innerHTML = `
+      <b>Online:</b> ${devicesOnline}<br>
+      <b>Vel máx:</b> ${maxSpeed} km/h<br>
+      <b>Actualizado:</b> ${new Date().toLocaleTimeString()}
+    `;
+
+  } catch (e) {
+    console.error("Error cargando GeoJSON", e);
+  }
+}
+
+loadGeo();
+setInterval(loadGeo, 8000);
+</script>
+</body>
+</html>
