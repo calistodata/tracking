@@ -1,160 +1,179 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CalistoTrack Live Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CalistoTrack — Live Map</title>
+
+  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <!-- MarkerCluster CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+
   <style>
-    body, html { margin:0; padding:0; height:100%; }
-    #map { width:100%; height:100%; }
+    html, body { height: 100%; margin: 0; padding: 0; }
+    #map { width: 100%; height: calc(100vh - 48px); } /* leave space for header */
+    header { height: 48px; background:#0b5; display:flex; align-items:center; padding:0 12px; color:#033; font-weight:700; }
+    .info-panel { box-shadow:0 2px 10px rgba(0,0,0,0.15); border-radius:6px; }
+    .error-box { position: absolute; top:56px; left:12px; z-index:9999; background:#fff; padding:8px 10px; border-radius:6px; box-shadow:0 2px 12px rgba(0,0,0,0.2); max-width:320px; display:none; }
+    .device-item { margin:6px 0; font-size:13px; }
+    .rot-icon div { transform-origin: 12px 12px; }
   </style>
 </head>
 <body>
+  <header>
+    CalistoTrack — Live Map
+    <div style="margin-left:auto; font-weight:400; font-size:13px;">
+      Actualiza cada 10s · <span id="status">cargando...</span>
+    </div>
+  </header>
+
   <div id="map"></div>
+  <div id="error" class="error-box"></div>
 
+  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- MarkerCluster JS -->
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
   <script>
-    /////////////////////////////////
-    // CONFIGURACIÓN PRINCIPAL
-    /////////////////////////////////
-    const geojsonUrl = "data.geojson"; // Cambiar por tu URL Pages si querés
+    // ----------------------------
+    // CONFIG - pon aquí tu URL completa de GeoJSON (GitHub Pages o raw)
+    // ----------------------------
+    // Ejemplo GitHub Pages:
+    // const GEOJSON_URL = "https://TU_USUARIO.github.io/TU_REPO/positions.geojson";
+    // Ejemplo raw:
+    // const GEOJSON_URL = "https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/positions.geojson";
+    const GEOJSON_URL = "data.geojson"; // o reemplazá por la URL absoluta de Pages/raw
 
-    // Capas base
-    const baseLayers = {
-      "OpenStreetMap": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }),
-      "OSM Dark": L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { maxZoom: 19 }),
-      "Carto Light": L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", { maxZoom: 19 })
-    };
+    const REFRESH_MS = 10000; // 10s
 
-    const map = L.map("map", {
+    // ----------------------------
+    // SETUP MAP + BASE LAYERS
+    // ----------------------------
+    const baseOSM = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '© OpenStreetMap' });
+    const baseDark = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { maxZoom: 19, attribution: '© Carto' });
+
+    const map = L.map('map', {
       center: [-34.60, -58.38],
       zoom: 12,
-      layers: [baseLayers["OpenStreetMap"]]
+      layers: [baseOSM]
     });
 
-    L.control.layers(baseLayers).addTo(map);
+    L.control.layers({ "OSM": baseOSM, "Dark": baseDark }).addTo(map);
 
-    /////////////////////////////////
-    // ÍCONOS
-    /////////////////////////////////
-    function getRotatedIcon(angle) {
+    // error box util
+    const errorBox = document.getElementById('error');
+    const statusSpan = document.getElementById('status');
+    function showError(msg) {
+      errorBox.style.display = 'block';
+      errorBox.innerText = msg;
+      console.error(msg);
+      statusSpan.innerText = "error";
+    }
+    function hideError() {
+      errorBox.style.display = 'none';
+      errorBox.innerText = '';
+      statusSpan.innerText = "ok";
+    }
+
+    // ----------------------------
+    // ICONS (rotated arrow)
+    // ----------------------------
+    function getRotatedIcon(angleDeg) {
+      // simple rotated arrow using divIcon
+      const html = `<div style="transform: rotate(${angleDeg || 0}deg); font-size:20px; line-height:20px;">➤</div>`;
       return L.divIcon({
-        html: `<div style='transform: rotate(${angle}deg); font-size: 24px;'>➤</div>`,
-        className: "rot-icon",
-        iconSize: [24, 24],
-        iconAnchor: [12, 12]
+        html: html,
+        className: 'rot-icon',
+        iconSize: [24,24],
+        iconAnchor: [12,12]
       });
     }
 
-    /////////////////////////////////
-    // CAPAS
-    /////////////////////////////////
-    let liveLayer;
-    let clusterLayer = L.markerClusterGroup();
-    map.addLayer(clusterLayer);
+    // ----------------------------
+    // CLUSTER + LAYERS
+    // ----------------------------
+    const clusterGroup = L.markerClusterGroup();
+    map.addLayer(clusterGroup);
 
-    let trackLines = {}; // para líneas históricas por dispositivo
+    // track lines per device
+    const trackLines = {};
 
-    /////////////////////////////////
-    // PANEL LATERAL
-    /////////////////////////////////
-    const panel = L.control({ position: "topright" });
-    panel.onAdd = function() {
-      const div = L.DomUtil.create("div", "info-panel");
-      div.style.background = "white";
-      div.style.padding = "10px";
-      div.style.width = "200px";
-      div.style.maxHeight = "400px";
-      div.style.overflowY = "auto";
-      div.innerHTML = "<h4>Dispositivos</h4><div id='deviceList'>Cargando...</div>";
-      return div;
-    };
-    panel.addTo(map);
-
-    /////////////////////////////////
-    // CARGA DE GEOJSON
-    /////////////////////////////////
-    async function loadGeoJSON() {
+    // ----------------------------
+    // LOAD GEOJSON and RENDER
+    // ----------------------------
+    let lastGeoJSON = null;
+    async function loadAndRender() {
       try {
-        const res = await fetch(geojsonUrl + "?t=" + Date.now());
+        statusSpan.innerText = "cargando";
+        const res = await fetch(GEOJSON_URL + "?t=" + Date.now(), { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error("HTTP " + res.status + " - " + res.statusText);
+        }
         const data = await res.json();
 
-        document.getElementById("deviceList").innerHTML = "";
-        clusterLayer.clearLayers();
+        // basic validation
+        if (!data || !Array.isArray(data.features)) {
+          throw new Error("GeoJSON inválido o sin 'features'");
+        }
 
-        if (liveLayer) liveLayer.remove();
+        // clear previous
+        clusterGroup.clearLayers();
 
-        liveLayer = L.geoJSON(data, {
-          pointToLayer: (feature, latlng) => {
-            const p = feature.properties;
-            const marker = L.marker(latlng, { icon: getRotatedIcon(p.course || 0) });
+        // optional: remove previous polylines but keep history if desired
+        // for now, keep and append
+        data.features.forEach(f => {
+          const p = f.properties || {};
+          const coords = (f.geometry && f.geometry.coordinates) || [];
+          const lon = coords[0], lat = coords[1];
+          if (lat == null || lon == null) return;
 
-            marker.bindPopup(`
-              <b>${p.name}</b><br>
-              ID: ${p.deviceId}<br>
-              Velocidad: ${p.speed} km/h<br>
-              Último fix: ${p.fixTime}<br>
-              Dirección: ${p.course}°
-            `);
+          const deviceId = p.deviceId || p.deviceId === 0 ? p.deviceId : (p.id || "unknown");
+          const course = Number(p.course) || 0;
+          const name = p.name || ("device " + deviceId);
+          const speed = p.speed || 0;
 
-            // Agregar al panel
-            const list = document.getElementById("deviceList");
-            const item = document.createElement("div");
-            item.style.margin = "5px 0";
-            item.innerHTML = `<b>${p.name}</b><br><small>${p.deviceId}</small>`;
-            list.appendChild(item);
+          // marker
+          const marker = L.marker([lat, lon], { icon: getRotatedIcon(course) });
+          const popup = `<b>${name}</b><br>ID: ${deviceId}<br>Vel: ${speed} km/h<br>Dir: ${course}°<br>${p.deviceTime || p.serverTime || ""}`;
+          marker.bindPopup(popup);
+          clusterGroup.addLayer(marker);
 
-            // Líneas de tracking por dispositivo
-            if (!trackLines[p.deviceId]) {
-              trackLines[p.deviceId] = L.polyline([], { color: "red", weight: 2 }).addTo(map);
-            }
-            trackLines[p.deviceId].addLatLng(latlng);
-
-            clusterLayer.addLayer(marker);
-            return marker;
+          // track line
+          if (!trackLines[deviceId]) {
+            trackLines[deviceId] = L.polyline([], { color: '#ff4444', weight: 2 }).addTo(map);
           }
-        }).addTo(map);
-      } catch (e) {
-        console.error("Error cargando GeoJSON:", e);
+          trackLines[deviceId].addLatLng([lat, lon]);
+        });
+
+        lastGeoJSON = data;
+        hideError();
+        statusSpan.innerText = "ok · " + new Date().toLocaleTimeString();
+
+        // if no features show message
+        if (data.features.length === 0) {
+          showError("GeoJSON válido pero sin features (features.length == 0)");
+        }
+      } catch (err) {
+        showError("Error cargando GeoJSON: " + err.message + "\nAbri la consola (F12) para más detalles.");
       }
     }
 
-    loadGeoJSON();
-    setInterval(loadGeoJSON, 10000); // refresco cada 10 segundos
-    const geojsonUrl = "positions.geojson"; // Cambiar por tu URL Pages si querés
+    // first load
+    loadAndRender();
 
-    const map = L.map("map").setView([-34.60, -58.38], 12);
+    // periodic refresh
+    setInterval(loadAndRender, REFRESH_MS);
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19
-    }).addTo(map);
-
-    let layer;
-
-    async function loadGeoJSON() {
-      try {
-        const res = await fetch(geojsonUrl + "?t=" + Date.now());
-        const data = await res.json();
-        if (layer) layer.remove();
-        layer = L.geoJSON(data, {
-          pointToLayer: (feature, latlng) => {
-            return L.circleMarker(latlng, {
-              radius: 6,
-              weight: 2,
-              color: "#ff0000",
-              fillColor: "#ff5555",
-              fillOpacity: 0.8
-            }).bindPopup(`ID: ${feature.properties.deviceId}<br>Nombre: ${feature.properties.name}<br>Velocidad: ${feature.properties.speed}`);
-          }
-        }).addTo(map);
-      } catch (e) {
-        console.error("Error cargando GeoJSON:", e);
-      }
+    // Developer helper: show console message if running under file:// where fetch won't work
+    if (location.protocol === "file:") {
+      showError("Estás abriendo index.html con file:// — usa GitHub Pages o un servidor local (python -m http.server) para que fetch funcione.");
     }
 
-    loadGeoJSON();
-    setInterval(loadGeoJSON, 15000); // refresca cada 15 segundos
   </script>
 </body>
 </html>
