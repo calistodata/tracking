@@ -1,4 +1,68 @@
 {
   "type": "FeatureCollection",
-  "features": []
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -58.3895784,
+          -34.6135285
+        ]
+      },
+      "properties": {
+        "deviceId": 15,
+        "name": "Diego",
+        "speed": 2.0993472,
+        "course": 285.84,
+        "protocol": "osmand",
+        "fixTime": "2025-11-14T16:54:25.644+00:00",
+        "deviceTime": "2025-11-14T16:54:25.644+00:00",
+        "serverTime": "2025-11-14T16:54:18.129+00:00",
+        "address": null
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -58.4531818,
+          -34.6275602
+        ]
+      },
+      "properties": {
+        "deviceId": 5,
+        "name": "G Cidre",
+        "speed": 0.0,
+        "course": 0.0,
+        "protocol": "osmand",
+        "fixTime": "2025-11-15T12:13:14.630+00:00",
+        "deviceTime": "2025-11-15T12:13:14.630+00:00",
+        "serverTime": "2025-11-15T12:13:12.971+00:00",
+        "address": null
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -58.68320591308724,
+          -34.68573212348626
+        ]
+      },
+      "properties": {
+        "deviceId": 1,
+        "name": "Cumbio",
+        "speed": 0.0,
+        "course": 0.0,
+        "protocol": "osmand",
+        "fixTime": "2025-11-15T18:48:19.268+00:00",
+        "deviceTime": "2025-11-15T18:48:19.268+00:00",
+        "serverTime": "2025-11-15T18:48:17.358+00:00",
+        "address": null
+      }
+    }
+  ]
 }
