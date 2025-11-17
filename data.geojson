@@ -27,27 +27,6 @@
       "geometry": {
         "type": "Point",
         "coordinates": [
-          -58.68320591308724,
-          -34.68573212348626
-        ]
-      },
-      "properties": {
-        "deviceId": 1,
-        "name": "Cumbio",
-        "speed": 0.0,
-        "course": 0.0,
-        "protocol": "osmand",
-        "fixTime": "2025-11-15T18:48:19.268+00:00",
-        "deviceTime": "2025-11-15T18:48:19.268+00:00",
-        "serverTime": "2025-11-15T18:48:17.358+00:00",
-        "address": null
-      }
-    },
-    {
-      "type": "Feature",
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
           -58.429277,
           -34.6156196
         ]
@@ -61,6 +40,27 @@
         "fixTime": "2025-11-17T01:15:33.147+00:00",
         "deviceTime": "2025-11-17T01:15:33.147+00:00",
         "serverTime": "2025-11-17T01:15:30.972+00:00",
+        "address": null
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -58.38922988241285,
+          -34.61378066016259
+        ]
+      },
+      "properties": {
+        "deviceId": 1,
+        "name": "Cumbio",
+        "speed": 6.4535488,
+        "course": 197.93,
+        "protocol": "osmand",
+        "fixTime": "2025-11-17T18:27:05.590+00:00",
+        "deviceTime": "2025-11-17T18:27:05.590+00:00",
+        "serverTime": "2025-11-17T18:27:00.412+00:00",
         "address": null
       }
     }
