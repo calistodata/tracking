@@ -48,19 +48,19 @@
       "geometry": {
         "type": "Point",
         "coordinates": [
-          -58.4330512,
-          -34.6168888
+          -58.433856,
+          -34.6172441
         ]
       },
       "properties": {
         "deviceId": 15,
         "name": "Diego",
-        "speed": 2.5464304,
-        "course": 237.18,
+        "speed": 2.5075536,
+        "course": 243.73,
         "protocol": "osmand",
-        "fixTime": "2025-11-17T01:00:57.287+00:00",
-        "deviceTime": "2025-11-17T01:00:57.287+00:00",
-        "serverTime": "2025-11-17T01:00:54.968+00:00",
+        "fixTime": "2025-11-17T01:01:57.404+00:00",
+        "deviceTime": "2025-11-17T01:01:57.404+00:00",
+        "serverTime": "2025-11-17T01:01:55.197+00:00",
         "address": null
       }
     }
