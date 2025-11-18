@@ -27,27 +27,6 @@
       "geometry": {
         "type": "Point",
         "coordinates": [
-          -58.429277,
-          -34.6156196
-        ]
-      },
-      "properties": {
-        "deviceId": 15,
-        "name": "Diego",
-        "speed": 2.6436224000000004,
-        "course": 50.28,
-        "protocol": "osmand",
-        "fixTime": "2025-11-17T01:15:33.147+00:00",
-        "deviceTime": "2025-11-17T01:15:33.147+00:00",
-        "serverTime": "2025-11-17T01:15:30.972+00:00",
-        "address": null
-      }
-    },
-    {
-      "type": "Feature",
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
           -58.38924403832588,
           -34.61337693601345
         ]
@@ -61,6 +40,27 @@
         "fixTime": "2025-11-17T22:20:44.110+00:00",
         "deviceTime": "2025-11-17T22:20:44.110+00:00",
         "serverTime": "2025-11-17T22:20:44.831+00:00",
+        "address": null
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -58.4037082,
+          -34.6145649
+        ]
+      },
+      "properties": {
+        "deviceId": 15,
+        "name": "Diego",
+        "speed": 0.291576,
+        "course": 107.84,
+        "protocol": "osmand",
+        "fixTime": "2025-11-18T10:38:41.716+00:00",
+        "deviceTime": "2025-11-18T10:38:41.716+00:00",
+        "serverTime": "2025-11-18T10:38:41.134+00:00",
         "address": null
       }
     }
