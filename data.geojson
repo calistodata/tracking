@@ -55,12 +55,12 @@
       "properties": {
         "deviceId": 15,
         "name": "Diego",
-        "speed": 1.5745104,
-        "course": 191.65,
+        "speed": 0.0,
+        "course": 0.0,
         "protocol": "osmand",
-        "fixTime": "2025-11-18T11:56:14.999+00:00",
-        "deviceTime": "2025-11-18T11:56:14.999+00:00",
-        "serverTime": "2025-11-18T12:00:19.014+00:00",
+        "fixTime": "2025-11-18T12:01:21.233+00:00",
+        "deviceTime": "2025-11-18T12:01:21.233+00:00",
+        "serverTime": "2025-11-18T12:01:30.033+00:00",
         "address": null
       }
     }
